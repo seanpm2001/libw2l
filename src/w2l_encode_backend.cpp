@@ -1,5 +1,8 @@
 #include <stdlib.h>
+#include <locale.h>
+#ifdef __APPLE__
 #include <xlocale.h>
+#endif
 
 #include <iostream>
 #include <stdlib.h>
