@@ -12,20 +12,28 @@ find_package(Glog REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ArrayFire REQUIRED)
 
-# TODO: toggle accelerate / ipp in build script
-if (FALSE)
-    find_library(LIBIPPS NAMES libipps.a HINTS /opt/intel/ipp/lib)
-    find_library(LIBIPPVM NAMES libippvm.a HINTS /opt/intel/ipp/lib)
-    find_library(LIBIPPCORE NAMES libippcore.a HINTS /opt/intel/ipp/lib)
-    set(IPP_LIBS ${LIBIPPS} ${LIBIPPCORE} ${LIBIPPVM})
-endif()
-
 add_library(w2l SHARED
     src/w2l_encode.cpp
     src/w2l_encode_backend.cpp
 )
-# TODO: toggle accelerate / ipp / mkl
-target_link_libraries(w2l "-framework Accelerate")
+
+if (W2L_USE_MKL)
+    target_compile_definitions(w2l PUBLIC -DUSE_MKL -DW2L_LIBRARIES_USE_MKL)
+    find_library(MKL_CORE NAMES libmkl_core.a)
+    find_library(MKL_INTEL_LP64 NAMES libmkl_intel_lp64.a)
+    find_library(MKL_GNU_THREAD NAMES libmkl_gnu_thread.a)
+    target_link_libraries(w2l "-Wl,--start-group" ${MKL_CORE} ${MKL_INTEL_LP64} ${MKL_GNU_THREAD} "-Wl,--end-group")
+endif()
+
+if (W2L_USE_ACCELERATE)
+    target_link_libraries(w2l "-framework Accelerate")
+else()
+    find_library(LIBIPPS NAMES libipps.a HINTS /opt/intel/ipp/lib)
+    find_library(LIBIPPVM NAMES libippvm.a HINTS /opt/intel/ipp/lib)
+    find_library(LIBIPPCORE NAMES libippcore.a HINTS /opt/intel/ipp/lib)
+    set(IPP_LIBS ${LIBIPPS} ${LIBIPPCORE} ${LIBIPPVM})
+    target_link_libraries(w2l ${IPP_LIBS})
+endif()
 
 set_target_properties(ArrayFire::afcpu PROPERTIES INTERFACE_LINK_LIBRARIES "")
 target_link_libraries(w2l
@@ -40,6 +48,8 @@ target_link_libraries(w2l
     glog
     ${LIBOMP}
 )
+
+# openmp
 if (APPLE)
     target_link_libraries(w2l -Wl,-cache_path_lto,/tmp/lto-cache)
     target_compile_options(w2l PUBLIC -Xpreprocessor -fopenmp)
