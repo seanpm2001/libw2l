@@ -43,7 +43,6 @@ target_link_libraries(w2l
     flashlight
     flashlight-app-asr
     fl-libraries
-    sndfile # FIXME
     ${GFLAGS_LIBRARIES}
     glog
     ${LIBOMP}
