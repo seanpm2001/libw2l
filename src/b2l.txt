@@ -12,7 +12,7 @@ long string:
 
 file start:
     magic = "BW2L"
-    u8 version = 1
+    u8 version = 2
     short string name
     u64 section_count = number of sections
     for (1 ... <section_count>)
@@ -42,13 +42,13 @@ section types:
     "array":
         short string type ("fp64", "fp32", "fp16", "i64", "i32", "i16", "i8")
         u64 array_len
+        u8  ndim    = number of dims (0 or greater)
+        u64 dims[n] = dense array of u64 array dims
         data[] = dense array of <type> values, length <array_len>
     "layers":
         u64 layer_count = number of layers
         for (1 ... <layer_count>)
             long_string arch # line defining this layer from wav2letter architecture file
-            float scale
-            i64 offset
             u64 param_count
             for (1 ... <param_count>)
                 array

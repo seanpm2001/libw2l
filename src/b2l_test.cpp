@@ -34,6 +34,34 @@ void hexdump(std::vector<uint8_t> data) {
     printf("\n");
 }
 
+template <typename T>
+void assert_equal(std::vector<T> a, std::vector<T> b) {
+    std::ostringstream ostr;
+    ostr << "vector {";
+    for (auto it = a.begin(); it != a.end(); it++) {
+        ostr << *it;
+        if (it < a.end() - 1) { ostr << ", "; }
+    }
+    ostr << "} == {";
+    for (auto it = b.begin(); it != b.end(); it++) {
+        ostr << *it;
+        if (it < a.end() - 1) { ostr << ", "; }
+    }
+    ostr << "\n";
+    bool equals = true;
+    if (a.size() == b.size()) {
+        for (ssize_t i = 0; i < a.size(); i++) {
+            if (a[i] != b[i]) {
+                equals = false;
+                break;
+            }
+        }
+    } else {
+        equals = false;
+    }
+    named_assert(ostr.str(), equals);
+}
+
 void assert_equal(std::string a, std::string b) {
     std::ostringstream ostr;
     ostr << "string a \"" << a << "\" == b \"" << b << "\"";
@@ -64,6 +92,19 @@ b2l::File assert_file_round_trip(b2l::File &file1) {
     return file2;
 }
 
+b2l::File assert_file_v1_round_trip(b2l::File &file1) {
+    int version = file1.version;
+    file1.version = 1;
+    auto file2 = assert_file_round_trip(file1);
+    file1.version = version;
+    return file2;
+}
+
+b2l::File assert_file_round_trip_all(b2l::File &file) {
+    assert_file_v1_round_trip(file);
+    return assert_file_round_trip(file);
+}
+
 #pragma mark tests
 
 void test_section() {
@@ -74,7 +115,7 @@ void test_section() {
 
 void test_file_no_sections() {
     b2l::File file1;
-    assert_file_round_trip(file1);
+    assert_file_round_trip_all(file1);
 }
 
 void test_file_config() {
@@ -85,7 +126,7 @@ void test_file_config() {
         {"criterion", "ctc"},
         {"quantization", ""},
     });
-    auto file2 = assert_file_round_trip(file1);
+    auto file2 = assert_file_round_trip_all(file1);
     auto &config2 = file2.section("config");
 
     auto kv1 = config.keyval();
@@ -105,19 +146,20 @@ void test_file_simple() {
     auto &section1 = file1.add_section("section name");
     std::vector<float> array1(1000);
     std::iota(array1.begin(), array1.end(), 1);
-    section1.array(array1);
-    assert_file_round_trip(file1);
+    section1.array(array1, {});
+    assert_file_round_trip_all(file1);
 }
 
 void test_file_layers() {
     b2l::File file1("name1");
     auto &section = file1.add_section("layer_section");
     std::vector<b2l::Layer> layers;
+    // test both with and without dims
     layers.emplace_back(b2l::Layer{"L1", {std::vector<float>{1.1, 2.2, 3.3}}});
     layers.emplace_back(b2l::Layer{"L2", {std::vector<int>{4, 5, 6}}});
     layers.emplace_back(b2l::Layer{"L3", {std::vector<double>{7.0, 8.4, 9.1}}});
     section.layers(layers);
-    auto file2 = assert_file_round_trip(file1);
+    auto file2 = assert_file_round_trip_all(file1);
 
     auto layers1 = file1.section("layer_section").layers();
     auto layers2 = file2.section("layer_section").layers();
@@ -126,8 +168,6 @@ void test_file_layers() {
         auto &layer1 = layers1[i];
         auto &layer2 = layers2[i];
         assert_equal(layer1.arch, layer2.arch);
-        assert(std::abs(layer1.scale - layer2.scale) < 1e-9);
-        assert(layer1.offset == layer2.offset);
         assert(layer1.params.size() == layer2.params.size());
         for (ssize_t j = 0; j < std::min(layer1.params.size(), layer2.params.size()); j++) {
             auto &param1 = layer1.params[j];
@@ -140,6 +180,7 @@ void test_file_layers() {
             assert(size1 != 0 && size2 != 0 && size1 == size2);
             assert(size1 == size2 && memcmp(data1, data2, size1) == 0);
             assert_equal(param1.to_str(), param2.to_str());
+            assert_equal(param1.dims(), param2.dims());
         }
     }
 }
@@ -162,7 +203,7 @@ void test_file_all_section_types() {
 
     auto &array_float = file1.add_section("array_float");
     std::vector<float> array_float_value{4, 3, 2, 1};
-    array_float.array(array_float_value);
+    array_float.array(array_float_value, {});
 
     auto &layers = file1.add_section("layers");
     std::vector<b2l::Layer> layer_list;
@@ -181,7 +222,7 @@ void test_file_all_section_types() {
     auto &str2 = file1.add_section("str2");
     str2.utf8("test string 2");
 
-    assert_file_round_trip(file1);
+    assert_file_round_trip_all(file1);
 
     auto writer = b2l::Writer::open_file("out.b2l");
     file1.write_to(writer);

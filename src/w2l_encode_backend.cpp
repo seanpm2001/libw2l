@@ -21,6 +21,10 @@
 #include "w2l_encode_backend.h"
 #include "b2l.h"
 
+static std::vector<int64_t> dims2vec(af::dim4 dims) {
+    return {dims[0], dims[1], dims[2], dims[3]};
+}
+
 using namespace fl::app::asr;
 
 // helper functions
@@ -215,7 +219,8 @@ bool Engine::loadB2lModel(std::string path) {
             auto &array = layer.params[j];
             switch (array.type()) {
                 case b2l::Array::Type::FP32: {
-                    auto val = array.array<float>();
+                    std::vector<int64_t> dims;
+                    auto val = array.array<float>(dims);
                     fl::Variable v(af::array(module->param(j).array().dims(), val.data()), false);
                     module->setParams(v, j);
                     break;
@@ -233,7 +238,8 @@ bool Engine::loadB2lModel(std::string path) {
     } else if (criterionType == kAsgCriterion) {
         criterion = std::make_shared<ASGLoss>(tokenDict.indexSize(), scalemode);
         // load transitions
-        auto transitions = file.section("transitions").array<float>();
+        std::vector<int64_t> dims;
+        auto transitions = file.section("transitions").array<float>(dims);
         fl::Variable v(af::array(tokenDict.indexSize(), tokenDict.indexSize(), transitions.data()), false);
         // need to use setParams to trigger ASGLoss->syncTransitions()
         criterion->setParams(v, 0);
@@ -295,7 +301,8 @@ bool Engine::exportB2lModel(std::string path) {
         std::vector<b2l::Array> params;
         params.reserve(flParams.size());
         for (auto &var : flParams) {
-            params.emplace_back(b2l::Array(fl::ext::afToVector<float>(var.array())));
+            std::vector<int64_t> dims = dims2vec(var.dims());
+            params.emplace_back(b2l::Array(fl::ext::afToVector<float>(var.array()), dims));
         }
         layers.emplace_back(b2l::Layer{layerString, params});
     }
@@ -318,7 +325,8 @@ bool Engine::exportB2lModel(std::string path) {
     if (criterionType == kAsgCriterion) {
         auto params = criterion->param(0);
         auto array = fl::ext::afToVector<float>(params.array());
-        file.add_section("transitions").array(array);
+        std::vector<int64_t> dims = dims2vec(params.dims());
+        file.add_section("transitions").array(array, dims);
     }
 
     auto writer = b2l::Writer::open_file(path);

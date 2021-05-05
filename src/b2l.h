@@ -50,28 +50,40 @@ struct Array {
 
     Array() : _type(Type::NONE), _value(nullptr) {}
     template <typename T>
+    Array(std::vector<T> &value, std::vector<int64_t> dims) : _type(Type::NONE), _value(nullptr) {
+        this->array(std::move(value), dims);
+    }
+    template <typename T>
+    Array(std::vector<T> value, std::vector<int64_t> dims) : _type(Type::NONE), _value(nullptr) {
+        this->array(std::move(value), dims);
+    }
+    template <typename T>
     Array(std::vector<T> &value) : _type(Type::NONE), _value(nullptr) {
-        this->array(std::move(value));
+        this->array(std::move(value), {});
     }
     template <typename T>
     Array(std::vector<T> value) : _type(Type::NONE), _value(nullptr) {
-        this->array(std::move(value));
+        this->array(std::move(value), {});
     }
     ~Array() { this->delete_value(); }
     Array(const Array &old) : _type(Type::NONE), _value(nullptr) { this->copy_value_from(old); }
     Array(Array &&other) {
         _type  = other._type;
         _value = other._value;
+        _dims = other._dims;
         other._type  = Type::NONE;
         other._value = nullptr;
+        other._dims.clear();
     }
     Array &operator=(Array &&other) {
         if (&other != this) {
             this->delete_value();
             _type  = other._type;
             _value = other._value;
+            _dims  = other._dims;
             other._type  = Type::NONE;
             other._value = nullptr;
+            other._dims.clear();
         }
         return *this;
     }
@@ -111,6 +123,14 @@ struct Array {
     Type::Enum type() { return _type; }
     std::string type_str() { return Type::to_str(this->_type); }
 
+    void dims(std::vector<int64_t> dims) {
+        _dims = std::move(dims);
+    }
+
+    std::vector<int64_t> &dims() {
+        return _dims;
+    }
+
     size_t size() {
         switch (this->_type) {
             // TODO: FP16
@@ -138,32 +158,27 @@ struct Array {
     }
 
     template <typename T>
-    std::vector<T> &array() {
+    std::vector<T> &array(std::vector<int64_t> &dims) {
         std::vector<T> &value = *reinterpret_cast<std::vector<T> *>(this->_value);
         Type::Enum type = Type::from_value(value);
         if (type != this->_type) {
             throw std::runtime_error("b2l::Array.array() type mismatch");
         }
+        dims = _dims;
         return value;
     }
-
     template <typename T>
-    std::vector<T> move_array() {
-        std::vector<T> &value = *reinterpret_cast<std::vector<T> *>(this->_value);
-        Type::Enum type = Type::from_value(value);
-        if (type != this->_type) {
-            throw std::runtime_error("b2l::Array.array() type mismatch");
-        }
-        std::vector<T> tmp = std::move(value);
-        this->delete_value();
-        return tmp;
+    std::vector<T> &array() {
+        std::vector<int64_t> dims;
+        return array<T>(dims);
     }
 
     template <typename T>
-    void array(const std::vector<T> &value) {
+    void array(const std::vector<T> &value, std::vector<int64_t> dims) {
         this->delete_value();
         this->_type = Type::from_value(value);
         this->_value = new std::vector<T>(value);
+        this->_dims = std::move(dims);
     }
 private:
     template <typename T>
@@ -198,6 +213,7 @@ private:
         if (!old._value || old._type == Type::NONE) {
             this->_value = nullptr;
             this->_type = Type::NONE;
+            this->_dims.clear();
             return;
         }
         switch (old._type) {
@@ -214,7 +230,7 @@ private:
     template <typename T>
     void copy_value(const Array &old) {
         auto &value = const_cast<Array &>(old).array<T>();
-        this->array<T>(value);
+        this->array<T>(value, old._dims);
     }
 
     void delete_value() {
@@ -235,6 +251,7 @@ private:
 private:
     Type::Enum _type;
     void *_value;
+    std::vector<int64_t> _dims;
 };
 
 class Reader {
@@ -313,11 +330,18 @@ public:
         return std::string(tmp.begin(), tmp.end());
     }
 
-    // TODO:
-    Array array() {
+    Array array(int version) {
         Array tmp;
         std::string type = short_string();
         size_t length = read64();
+        if (version == 2) {
+            std::vector<int64_t> dims;
+            int ndim = read8();
+            for (int i = 0; i < ndim; i++) {
+                dims.push_back(read64());
+            }
+            tmp.dims(dims);
+        }
         uint8_t *data;
         size_t byte_size;
         tmp.init(type, length);
@@ -328,13 +352,20 @@ public:
         return tmp;
     }
     template <typename T>
-    std::vector<T> array() {
+    std::vector<T> array(std::vector<int64_t> &dims, int version) {
         std::vector<T> value;
         auto type = Array::Type::to_str(Array::Type::from_value(value));
         if (type != short_string()) {
             throw std::runtime_error("b2l::Reader: array type mismatch");
         }
         value.resize(read64());
+        dims.clear();
+        if (version == 2) {
+            int ndim = read8();
+            for (int i = 0; i < ndim; i++) {
+                dims.push_back(read64());
+            }
+        }
         if (value.size() > 0) {
             read_bytes((uint8_t *)&value[0], sizeof(T) * value.size());
         }
@@ -401,9 +432,16 @@ public:
         return write_bytes((const uint8_t *)str.data(), str.size());
     }
 
-    void array(Array &value) {
+    void array(Array &value, int version) {
         short_string(value.type_str());
         write64(value.size());
+        if (version == 2) {
+            std::vector<int64_t> &dims = value.dims();
+            write8(dims.size());
+            for (auto v : dims) {
+                write64(v);
+            }
+        }
         uint8_t *data;
         size_t byte_size;
         value.raw(&data, &byte_size);
@@ -412,10 +450,16 @@ public:
         }
     }
     template <typename T>
-    void array(std::vector<T> &value) {
+    void array(std::vector<T> &value, std::vector<int64_t> dims, int version) {
         auto type = Array::Type::to_str(Array::Type::from_value(value));
         short_string(type);
         write64(value.size());
+        if (version == 2) {
+            write8(dims.size());
+            for (auto v : dims) {
+                write64(v);
+            }
+        }
         if (value.size() > 0) {
             write_bytes((uint8_t *)&value[0], sizeof(T) * value.size());
         }
@@ -433,8 +477,6 @@ struct Layer {
 
     std::string arch;
     std::vector<Array> params;
-    float scale = 1.0;
-    int64_t offset = 0;
 };
 
 struct Section {
@@ -442,11 +484,12 @@ public:
     // static const std::unordered_set<std::string> Types = {"utf8", "keyval", "data", "array", "params"};
 
 public:
-    Section(std::string name="") :
+    Section(std::string name="", int version=2) :
             name(name),
             stream(std::make_shared<std::stringstream>()),
             _reader(nullptr),
-            _writer(nullptr) {
+            _writer(nullptr),
+            _version(version) {
         _wrote = false;
         _off = 0;
         _size = 0;
@@ -479,14 +522,13 @@ public:
         return _writer;
     }
 
-    static Section read_from(Reader &reader, bool read_all=false) {
+    static Section read_from(Reader &reader, int version, bool read_all=false) {
         std::string name = reader.short_string();
         std::string type = reader.short_string();
         std::string desc = reader.long_string();
         size_t size = reader.read64();
 
-        Section out;
-        out.name = std::move(name);
+        Section out(name, version);
         out.type = std::move(type);
         out.desc = std::move(desc);
 
@@ -567,24 +609,22 @@ public:
 
     // section.array<float>()
     template<typename T>
-    std::vector<T> array() {
+    std::vector<T> array(std::vector<int64_t> &dims) {
         this->assert_type("array");
-        return this->reader().array<T>();
+        return this->reader().array<T>(dims, _version);
     }
     Array array() {
         this->assert_type("array");
-        return this->reader().array();
+        return this->reader().array(_version);
     }
     template<typename T>
-    void array(std::vector<T> &values) {
+    void array(std::vector<T> &values, std::vector<int64_t> dims) {
         type = "array";
-        writer().array(values);
+        writer().array(values, dims, _version);
     }
 
     // for (auto &layer : section.layers()) {
     //   layer.name
-    //   layer.scale
-    //   layer.offset
     //   layer.params[0].array<float>();
     std::vector<Layer> layers() {
         this->assert_type("layers");
@@ -594,12 +634,14 @@ public:
         layers.resize(count);
         for (auto &layer : layers) {
             layer.arch = reader.long_string();
-            layer.scale = reader.fp32();
-            layer.offset = (int64_t)reader.read64();
+            if (_version == 1) {
+                reader.fp32();   // scale  (v1)
+                reader.read64(); // offset (v1)
+            }
             auto param_count = reader.read64();
             layer.params.resize(param_count);
             for (ssize_t i = 0; i < param_count; i++) {
-                layer.params[i] = reader.array();
+                layer.params[i] = reader.array(_version);
             }
         }
         return layers;
@@ -610,11 +652,13 @@ public:
         writer.write64(layers.size());
         for (auto &layer : layers) {
             writer.long_string(layer.arch);
-            writer.fp32(layer.scale);
-            writer.write64((uint64_t)layer.offset);
+            if (_version == 1) {
+                writer.fp32(1.0);  // scale  (v1)
+                writer.write64(0); // offset (v1)
+            }
             writer.write64(layer.params.size());
             for (auto &array : layer.params) {
-                writer.array(array);
+                writer.array(array, _version);
             }
         }
     }
@@ -646,6 +690,7 @@ public:
 private:
     Reader _reader;
     Writer _writer;
+    int _version;
     ssize_t _off;
     size_t _size;
     size_t _end;
@@ -656,12 +701,12 @@ private:
 struct File {
 public:
     std::string magic;        // "BW2L"
-    uint8_t version;          // 1
+    uint8_t version;          // 2
     std::string name;         // "streaming-convnets"
     std::vector<Section> sections;
     std::unordered_map<std::string, size_t> section_lookup;
 
-    File(std::string name="") : magic("BW2L"), version(1), name(name) {}
+    File(std::string name="") : magic("BW2L"), version(2), name(name) {}
 
     bool has_section(std::string name) {
         auto idx = section_lookup.find(name);
@@ -677,7 +722,7 @@ public:
     }
 
     Section &add_section(std::string name) {
-        sections.emplace_back(Section(name));
+        sections.emplace_back(Section(name, version));
         section_lookup[name] = sections.size() - 1;
         return sections.back();
     }
@@ -693,13 +738,13 @@ public:
         auto data = reader.read_bytes(4);
         out.magic = std::string(data.begin(), data.end());
         out.version = reader.read8();
-        if (out.magic != "BW2L" || out.version != 1) {
+        if (out.magic != "BW2L" || (out.version != 1 && out.version != 2)) {
             throw std::runtime_error("Unsupported file magic or version");
         }
         out.name = reader.short_string();
         out.sections.resize(reader.read64());
         for (ssize_t i = 0; i < out.sections.size(); i++) {
-            auto section = out.sections[i] = Section::read_from(reader, read_all);
+            auto section = out.sections[i] = Section::read_from(reader, out.version, read_all);
             out.section_lookup[section.name] = i;
         }
         return out;
@@ -712,7 +757,7 @@ public:
 
     void write_to(Writer &writer) {
         writer.write_bytes((uint8_t *)"BW2L", 4); // magic
-        writer.write8(1);                         // version
+        writer.write8(version);                   // version
         writer.short_string(name);
         writer.write64(sections.size());
         for (auto &section : sections) {
