@@ -9,6 +9,10 @@ w2l_engine *w2l_engine_new() {
     return reinterpret_cast<w2l_engine *>(engine);
 }
 
+void w2l_engine_test(w2l_engine *engine, int model_dim, int kernel_size) {
+    reinterpret_cast<Engine *>(engine)->test(model_dim, kernel_size);
+}
+
 bool w2l_engine_load_w2l(w2l_engine *engine, const char *acoustic_model_path, const char *tokens_path) {
     return reinterpret_cast<Engine *>(engine)->loadW2lModel(acoustic_model_path, tokens_path);
 }

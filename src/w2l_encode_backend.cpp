@@ -92,9 +92,55 @@ Engine::Engine() {
     loaded = false;
 }
 
+static std::unordered_map<std::string, int> af_dump_nonce;
+static void af_dump(std::string name, af::array array) {
+    af_dump_nonce[name] += 1;
+    int nonce = af_dump_nonce[name];
+    std::ostringstream path;
+    path << "dump/" << name << "-" << nonce;
+    int64_t dims[4] = {array.dims(0), array.dims(1), array.dims(2), array.dims(3)};
+    // std::cout << "(" << name << ") [" << dims[0] << " " << dims[1] << " " << dims[2] << " " << dims[3] << "]\n";
+    FILE *f = fopen(path.str().c_str(), "wb");
+    fwrite(dims, sizeof(int64_t), 4, f);
+    float *ptr = array.host<float>();
+    fwrite((void *)ptr, array.bytes(), 1, f);
+    free(ptr);
+    fclose(f);
+}
+
+void Engine::test(int model_dim, int kernel_size) {
+    auto conv = std::make_shared<fl::Conv2D>(
+        model_dim, model_dim,  // input / output
+        kernel_size, 1,  // kernel size
+        1, 1,  // stride
+        fl::PaddingMode::SAME, 0, // padding
+        1, 1,  // dilation
+        true,  // bias
+        model_dim);    // groups
+    conv->eval();
+
+    af_dump("weight", conv->params()[0].array());
+    af_dump("bias", conv->params()[1].array());
+
+    // auto input = af::iota(af::dim4(256, 20, 1, 1));
+    auto input = af::iota(af::dim4(kernel_size * 2, 1, model_dim, 1));
+    af_dump("input", input);
+    // af::print("input", input);
+    auto output = conv->forward({fl::noGrad(input)});
+    af_dump("output", output.array());
+    // std::cout << output.dims(0) << " " << output.dims(1) << " " << output.dims(2) << " " << output.dims(3) << "\n";
+    af::print("output", output.array());
+}
+
 w2l_emission *Engine::forward(float *samples, size_t sample_count) {
     auto input = inputFeatures(samples, {1, dim_t(sample_count)}, af::dtype::f32);
     float duration = (float)sample_count / (float)featParams.samplingFreq * 1000.0;
+
+    /*
+    input = af::array(4071, 80, 1, 1);
+    input.write((void *)feature_force, sizeof(feature_force));
+    */
+
     auto rawEmission = fl::ext::forwardSequentialModuleWithPadMask(
         fl::input(input),
         network,
@@ -103,7 +149,7 @@ w2l_emission *Engine::forward(float *samples, size_t sample_count) {
 }
 
 af::array Engine::process(const af::array &features) {
-    return network->forward({fl::input(features)}).front().array();
+    return network->forward({fl::noGrad(features)}).front().array();
 }
 
 void Engine::loadFlags(std::map<std::string, std::string> &flags) {
@@ -296,6 +342,21 @@ bool Engine::exportB2lModel(std::string path) {
             continue;
         }
         arch << layerString << "\n";
+
+        fl::Container *container = dynamic_cast<fl::Container *>(module.get());
+        if (container) {
+            for (auto mod : container->modules()) {
+                std::cerr << "checking params " << mod->prettyString() << "\n";
+                for (int i = 0; i < mod->params().size(); i++) {
+                    auto var = mod->param(i);
+                    std::cerr << "param " << i << " [ ";
+                    for (int j = 0; j < 4; j++) {
+                        std::cerr << var.dims(j) << " ";
+                    }
+                    std::cerr << "] \n";
+                }
+            }
+        }
 
         auto flParams = module->params();
         std::vector<b2l::Array> params;

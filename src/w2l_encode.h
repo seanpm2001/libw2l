@@ -11,6 +11,7 @@ typedef struct w2l_engine w2l_engine;
 
 // encoder
 w2l_engine *w2l_engine_new();
+void w2l_engine_test(w2l_engine *engine, int, int);
 bool w2l_engine_load_w2l(w2l_engine *engine, const char *acoustic_model_path, const char *tokens_path);
 bool w2l_engine_load_b2l(w2l_engine *engine, const char *path);
 bool w2l_engine_export_w2l(w2l_engine *engine, const char *path);

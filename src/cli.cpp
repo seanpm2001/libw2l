@@ -18,7 +18,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (strcmp(argv[1], "pack") == 0) {
+    if (strcmp(argv[1], "test") == 0) {
+        int model_dim = strtol(argv[2], NULL, 10);
+        int kernel_size = strtol(argv[3], NULL, 10);
+        w2l_engine *engine = w2l_engine_new();
+        w2l_engine_test(engine, model_dim, kernel_size);
+    } else if (strcmp(argv[1], "pack") == 0) {
         if (argc < 5) {
             usage();
             return 1;

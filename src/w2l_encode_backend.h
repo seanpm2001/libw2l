@@ -10,6 +10,7 @@ public:
     Engine();
     ~Engine() {}
 
+    void test(int, int);
     w2l_emission *forward(float *samples, size_t sample_count);
     af::array process(const af::array &features);
 
