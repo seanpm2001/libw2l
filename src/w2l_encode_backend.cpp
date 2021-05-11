@@ -96,14 +96,14 @@ w2l_emission *Engine::forward(float *samples, size_t sample_count) {
     auto input = inputFeatures(samples, {1, dim_t(sample_count)}, af::dtype::f32);
     float duration = (float)sample_count / (float)featParams.samplingFreq * 1000.0;
     auto rawEmission = fl::ext::forwardSequentialModuleWithPadMask(
-        fl::input(input),
+        fl::noGrad(input),
         network,
         {duration});
     return afToEmission(rawEmission.array());
 }
 
 af::array Engine::process(const af::array &features) {
-    return network->forward({fl::input(features)}).front().array();
+    return network->forward({fl::noGrad(features)}).front().array();
 }
 
 void Engine::loadFlags(std::map<std::string, std::string> &flags) {
