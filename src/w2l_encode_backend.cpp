@@ -379,8 +379,27 @@ std::string Engine::layerArch(fl::Module *module) {
             ostr << " " << l << " " << r;
         }
 
-    // TYPE: TRANSFORMERS (TODO)
-    // } else if (type == "Transformer") {
+    // TYPE: TRANSFORMERS
+    } else if (type == "Transformer") {
+        // Transformer (nHeads: 4), (pDropout: 0.05), (pLayerdrop: 0.05), (bptt: 920), (useMask: 0), (preLayerNorm: 0)
+        // TR 768 3072 4 920 0.05 0.05
+        std::string _, num;
+        std::vector<std::string> numbers;
+        for (auto &chunk : splitAll(pretty, "), (")) {
+            std::tie(_, num) = splitOn(chunk, ": ");
+            trim(num, ")");
+            numbers.emplace_back(num);
+        }
+        dim_t modelDim = module->param(1).dims(1),
+              mlpDim   = module->param(1).dims(0);
+        std::string nHeads   = numbers[0],
+                    dropout  = numbers[1],
+                    layerDropout = numbers[2],
+                    bptt     = numbers[3],
+                    useMask  = numbers[4],
+                    preLayerNorm = numbers[5];
+        ostr << "TR " << modelDim << " " << mlpDim << " " << nHeads << " " << bptt << " " << dropout << " " << layerDropout << " " << useMask << " " << preLayerNorm;
+
     // } else if (type == "PositionEmbedding") {
     } else if (type == "Conformer") {
         // Conformer (modelDim: 144), (mlpDim: 288), (nHeads: 4), (pDropout: 0.1), (pLayerDropout: 0), (bptt: 144), (convKernel: 19)
