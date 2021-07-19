@@ -1,4 +1,5 @@
 // #pragma once
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -273,8 +274,8 @@ public:
     }
 
     // methods
-    void seek(ssize_t pos) { f->seekg(pos); }
-    ssize_t tell()         { return f->tellg(); }
+    void seek(size_t pos) { f->seekg(pos); }
+    size_t tell()         { return f->tellg(); }
     bool eof()             { return f->eof(); }
     
     uint8_t read8() {
@@ -401,7 +402,7 @@ public:
 
     void write64(uint64_t n) {
         char bytes[8] = {0};
-        for (ssize_t i = 0; i < 8; i++) {
+        for (size_t i = 0; i < 8; i++) {
             bytes[i] = (n >> (i * 8LL)) & 0xff;
         }
         f->write(bytes, 8);
@@ -498,7 +499,7 @@ public:
         _writer = Writer(stream);
     }
 
-    void set_reader(Reader reader, ssize_t off, size_t size) {
+    void set_reader(Reader reader, size_t off, size_t size) {
         _reader = reader;
         _off = off;
         _size = size;
@@ -629,7 +630,7 @@ public:
     std::vector<Layer> layers() {
         this->assert_type("layers");
         auto reader = this->reader();
-        ssize_t count = reader.read64();
+        size_t count = reader.read64();
         std::vector<Layer> layers;
         layers.resize(count);
         for (auto &layer : layers) {
@@ -640,7 +641,7 @@ public:
             }
             auto param_count = reader.read64();
             layer.params.resize(param_count);
-            for (ssize_t i = 0; i < param_count; i++) {
+            for (size_t i = 0; i < param_count; i++) {
                 layer.params[i] = reader.array(_version);
             }
         }
@@ -691,7 +692,7 @@ private:
     Reader _reader;
     Writer _writer;
     int _version;
-    ssize_t _off;
+    size_t _off;
     size_t _size;
     size_t _end;
     bool _wrote;
@@ -743,7 +744,7 @@ public:
         }
         out.name = reader.short_string();
         out.sections.resize(reader.read64());
-        for (ssize_t i = 0; i < out.sections.size(); i++) {
+        for (size_t i = 0; i < out.sections.size(); i++) {
             auto section = out.sections[i] = Section::read_from(reader, out.version, read_all);
             out.section_lookup[section.name] = i;
         }
